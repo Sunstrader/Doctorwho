@@ -1,8 +1,17 @@
 (() => {
   "use strict";
 
-  const book = window.BOOK_01;
+  const books = [
+    window.BOOK_01,
+    window.BOOK_02,
+    window.BOOK_03,
+    window.BOOK_04,
+    window.BOOK_05
+  ].filter(Boolean);
+
   const app = document.getElementById("app");
+  let book = books[0];
+
   const state = {
     hero: null,
     item: null,
@@ -12,11 +21,19 @@
     lastItem: null
   };
 
+  const coverMeta = {
+    "book-01": {icon:"🕰️", label:"Boucle temporelle"},
+    "book-02": {icon:"👼", label:"Mystère"},
+    "book-03": {icon:"🦕", label:"Aventure"},
+    "book-04": {icon:"🚪", label:"Exploration"},
+    "book-05": {icon:"👁️", label:"Épopée"}
+  };
+
   const escapeHtml = (value = "") => String(value).replace(/[&<>"']/g, c => ({
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
   })[c]);
 
-  function reset() {
+  function resetState() {
     state.hero = null;
     state.item = null;
     state.flags = {};
@@ -26,31 +43,58 @@
   }
 
   function renderHome() {
-    reset();
+    resetState();
+    app.innerHTML = `
+      <section class="home card collection-home">
+        <div class="kicker">Doctor Who · Ma Première Aventure</div>
+        <h1 class="logo">Choisis ton aventure</h1>
+        <p class="subtitle">Cinq histoires courtes, trois personnages par livre, des objets à trouver et plusieurs chemins jusqu'à la fin.</p>
+        <div class="books-grid">
+          ${books.map((b,i) => {
+            const m = coverMeta[b.id] || {icon:"✦",label:"Aventure"};
+            return `
+              <button class="book-card" data-book="${i}">
+                <span class="book-number">Livre ${i+1}</span>
+                <span class="book-cover-icon">${m.icon}</span>
+                <strong>${escapeHtml(b.title)}</strong>
+                <small>${escapeHtml(m.label)} · ${Object.keys(b.scenes).length} scènes</small>
+              </button>`;
+          }).join("")}
+        </div>
+        <p class="legal-note">Projet fan-made non officiel.</p>
+      </section>`;
+
+    document.querySelectorAll("[data-book]").forEach(btn => {
+      btn.onclick = () => {
+        book = books[Number(btn.dataset.book)];
+        renderBookIntro();
+      };
+    });
+  }
+
+  function renderBookIntro() {
+    resetState();
+    const index = books.indexOf(book);
+    const m = coverMeta[book.id] || {icon:"✦",label:"Aventure"};
     app.innerHTML = `
       <section class="home card">
-        <div class="book-badge">Livre 1 sur 5</div>
-        <div class="kicker">Doctor Who · Ma Première Aventure</div>
+        <div class="book-badge">Livre ${index+1} sur ${books.length} · ${escapeHtml(m.label)}</div>
+        <div class="book-cover-big" aria-hidden="true">${m.icon}</div>
         <h1 class="logo">${escapeHtml(book.title)}</h1>
         <p class="subtitle">${escapeHtml(book.subtitle)}</p>
-        <button class="primary" id="start">Commencer l'aventure</button>
-        <div class="collection" aria-label="Collection">
-          <div class="book-dot active">1<br>Disparu</div>
-          <div class="book-dot">2<br>Musée</div>
-          <div class="book-dot">3<br>Dinosaure</div>
-          <div class="book-dot">4<br>TARDIS</div>
-          <div class="book-dot">5<br>Dalek</div>
-        </div>
+        <button class="primary" id="start">Commencer</button>
+        <button class="secondary" id="back-library">← Bibliothèque</button>
       </section>`;
     document.getElementById("start").onclick = renderHeroSelect;
+    document.getElementById("back-library").onclick = renderHome;
   }
 
   function renderHeroSelect() {
     app.innerHTML = `
       <section class="select-screen card">
-        <div class="kicker">Étape 1</div>
-        <h1>Qui vas-tu accompagner ?</h1>
-        <p class="subtitle" style="margin-left:0">Chaque héroïne commence avec un objet différent. Certains chemins seront plus faciles avec le bon objet.</p>
+        <div class="kicker">${escapeHtml(book.title)}</div>
+        <h1>Choisis ton personnage</h1>
+        <p class="subtitle" style="margin-left:0">Chaque personnage commence avec un objet différent. Certains chemins deviennent plus faciles selon ton choix.</p>
         <div class="select-grid">
           ${Object.entries(book.heroes).map(([id,h]) => `
             <button class="hero-select" data-hero="${id}">
@@ -61,13 +105,15 @@
             </button>`).join("")}
         </div>
         <div class="footer-actions">
-          <button class="secondary" id="back-home">← Retour</button>
+          <button class="secondary" id="book-back">← Présentation</button>
+          <button class="secondary" id="home">⌂ Bibliothèque</button>
         </div>
       </section>`;
     document.querySelectorAll("[data-hero]").forEach(btn => {
       btn.onclick = () => startWithHero(btn.dataset.hero);
     });
-    document.getElementById("back-home").onclick = renderHome;
+    document.getElementById("book-back").onclick = renderBookIntro;
+    document.getElementById("home").onclick = renderHome;
   }
 
   function startWithHero(id) {
@@ -75,10 +121,10 @@
     state.hero = id;
     state.item = hero.item.id;
     state.lastItem = null;
-    state.flags = { courage:0, clues:0, mercy:0 };
+    state.flags = { courage:0, brave:0, clues:0, mercy:0, kind:0, careful:0 };
     state.scene = book.start;
     state.history = [];
-    renderScene(true);
+    renderScene();
   }
 
   function getItem(id) {
@@ -101,13 +147,18 @@
       </aside>`;
   }
 
+  function applyFlags(flags) {
+    if (!flags) return;
+    Object.entries(flags).forEach(([k,v]) => {
+      state.flags[k] = typeof v === "number" ? (state.flags[k] || 0) + v : v;
+    });
+  }
+
   function applyEffects(scene) {
     state.lastItem = state.item;
     if (scene.giveItem) state.item = scene.giveItem;
     if (scene.removeItem) state.item = null;
-    if (scene.flags) Object.entries(scene.flags).forEach(([k,v]) => {
-      state.flags[k] = typeof v === "number" ? (state.flags[k] || 0) + v : v;
-    });
+    applyFlags(scene.flags);
   }
 
   function choiceAllowed(choice) {
@@ -123,21 +174,20 @@
       state.lastItem = state.item;
       state.item = choice.setItem;
     }
-    if (choice.flags) Object.entries(choice.flags).forEach(([k,v]) => {
-      state.flags[k] = typeof v === "number" ? (state.flags[k] || 0) + v : v;
-    });
+    applyFlags(choice.flags);
     state.history.push(state.scene);
     state.scene = typeof choice.next === "function" ? choice.next(state) : choice.next;
     renderScene();
   }
 
-  function renderScene(first = false) {
+  function renderScene() {
     const scene = book.scenes[state.scene];
     if (!scene) {
-      app.innerHTML = '<section class="home card"><h1>Scène introuvable</h1><button class="primary" id="home">Accueil</button></section>';
+      app.innerHTML = '<section class="home card"><h1>Scène introuvable</h1><button class="primary" id="home">Bibliothèque</button></section>';
       document.getElementById("home").onclick = renderHome;
       return;
     }
+
     applyEffects(scene);
     if (scene.end) return renderEnd(scene);
 
@@ -148,7 +198,10 @@
         <article class="story card">
           <div class="scene-art" data-tone="${scene.tone || "blue"}">
             <span class="art-glyph" aria-hidden="true">${scene.glyph || "✦"}</span>
-            <div><div class="chapter">${escapeHtml(scene.chapter || "Aventure")}</div><h2>${escapeHtml(scene.title)}</h2></div>
+            <div>
+              <div class="chapter">${escapeHtml(scene.chapter || "Aventure")}</div>
+              <h2>${escapeHtml(scene.title)}</h2>
+            </div>
           </div>
           <div class="story-body">
             <p class="story-text">${escapeHtml(typeof scene.text === "function" ? scene.text(state) : scene.text)}</p>
@@ -156,8 +209,10 @@
             <div class="choices">
               ${scene.choices.map((c,i) => {
                 const ok = choiceAllowed(c);
-                const lockReason = c.requiresItem && !ok ? `Il faut : ${getItem(c.requiresItem).name}` :
-                                   c.requiresHero && !ok ? "Ce choix appartient à un autre personnage" : "";
+                const lockReason =
+                  c.requiresItem && !ok ? `Il faut : ${getItem(c.requiresItem).name}` :
+                  c.requiresHero && !ok ? "Choix réservé à un autre personnage" :
+                  c.requiresFlag && !ok ? "Il manque un indice" : "";
                 return `<button class="choice ${ok ? "":"locked"}" data-choice="${i}" ${ok ? "":"disabled"}>
                   <span class="ci">${c.icon || ["🔷","🟨","🔺"][i] || "➜"}</span>
                   ${escapeHtml(c.label)}
@@ -166,8 +221,8 @@
               }).join("")}
             </div>
             <div class="footer-actions">
-              <button class="secondary" id="restart">↻ Recommencer</button>
-              <button class="secondary" id="home">⌂ Accueil</button>
+              <button class="secondary" id="restart">↻ Recommencer ce livre</button>
+              <button class="secondary" id="home">⌂ Bibliothèque</button>
             </div>
           </div>
         </article>
@@ -196,17 +251,17 @@
           </div>
           <div class="story-body">
             <p class="story-text">${escapeHtml(typeof scene.text === "function" ? scene.text(state) : scene.text)}</p>
-            <div class="event">Tu as terminé l'aventure avec <strong>${escapeHtml(hero.name)}</strong> et <strong>${escapeHtml(getItem(state.item).name)}</strong>.</div>
-            <div class="choices" style="grid-template-columns:1fr 1fr">
+            <div class="event">Aventure terminée avec <strong>${escapeHtml(hero.name)}</strong> et <strong>${escapeHtml(getItem(state.item).name)}</strong>.</div>
+            <div class="end-actions">
               <button class="primary" id="again">Rejouer avec un autre personnage</button>
-              <button class="secondary" id="home">Retour à la collection</button>
+              <button class="secondary" id="other-book">Choisir un autre livre</button>
             </div>
           </div>
         </article>
         ${wheel("item")}
       </section>`;
     document.getElementById("again").onclick = renderHeroSelect;
-    document.getElementById("home").onclick = renderHome;
+    document.getElementById("other-book").onclick = renderHome;
   }
 
   renderHome();
